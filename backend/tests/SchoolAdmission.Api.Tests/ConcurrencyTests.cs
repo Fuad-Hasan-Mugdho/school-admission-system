@@ -20,14 +20,15 @@ public sealed class ConcurrencyTests(PostgresFixture pg)
 
         var students = Enumerable.Range(0, applicants).Select(_ => TestClient.NewStudentId()).ToList();
 
-        // Start every request at the same moment.
-        using var gate = new ManualResetEventSlim(false);
+        // Start every request at the same moment: each task awaits the gate (never blocks a thread),
+        // then the gate is opened once all of them are queued.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = students.Select(async s =>
         {
-            gate.Wait();
+            await gate.Task;
             return await client.Hold(classId, s);
         }).ToList();
-        gate.Set();
+        gate.SetResult();
         var results = await Task.WhenAll(tasks);
 
         var created = results.Count(r => r.Response.StatusCode == HttpStatusCode.Created);
@@ -114,14 +115,14 @@ public sealed class ConcurrencyTests(PostgresFixture pg)
         var classId = await clientA.CreateClass(totalSeats);
         Assert.Equal(totalSeats, (await clientB.GetClass(classId)).Int("availableSeats"));
 
-        using var gate = new ManualResetEventSlim(false);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = Enumerable.Range(0, applicantsPerInstance * 2).Select(async i =>
         {
             var client = i % 2 == 0 ? clientA : clientB;
-            gate.Wait();
+            await gate.Task;
             return await client.Hold(classId, TestClient.NewStudentId());
         }).ToList();
-        gate.Set();
+        gate.SetResult();
         var results = await Task.WhenAll(tasks);
 
         Assert.Equal(totalSeats, results.Count(r => r.Response.StatusCode == HttpStatusCode.Created));

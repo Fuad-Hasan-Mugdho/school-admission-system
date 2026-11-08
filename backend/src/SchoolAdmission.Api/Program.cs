@@ -21,6 +21,10 @@ builder.Services.AddDbContext<AdmissionDbContext>(o => o.UseNpgsql(connectionStr
 builder.Services.AddScoped<AdmissionService>();
 builder.Services.AddHostedService<HoldExpirySweeper>();
 
+// Make malformed JSON bodies throw so the handler below can answer with a readable JSON error
+// instead of the framework's empty 400.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
+
 builder.Services.Configure<JsonOptions>(o =>
 {
     o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;

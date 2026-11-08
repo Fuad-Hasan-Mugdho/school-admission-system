@@ -4,7 +4,7 @@ namespace SchoolAdmission.Api.Domain;
 
 /// <summary>
 /// Opaque, URL-safe identifiers. The prefix makes ids self-describing in logs and tests
-/// ("c_" = class, "h_" = hold); the body is 12 random base32-ish characters (60 bits of entropy).
+/// ("c_" = class, "h_" = hold); the body is 12 random base-36 characters (~62 bits of entropy).
 /// </summary>
 public static class Ids
 {

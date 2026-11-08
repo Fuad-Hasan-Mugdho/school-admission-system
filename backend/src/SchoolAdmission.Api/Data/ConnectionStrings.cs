@@ -25,13 +25,20 @@ public static class ConnectionStrings
         return Normalize(raw);
     }
 
+    /// <summary>
+    /// Default pool cap when the connection string does not set one. PostgreSQL ships with
+    /// max_connections = 100; Npgsql's default of 100 per process would let a single busy backend
+    /// (or two backends sharing the database) exhaust it. Operators can still override it explicitly.
+    /// </summary>
+    public const int DefaultMaxPoolSize = 40;
+
     public static string Normalize(string raw)
     {
         raw = raw.Trim();
         if (!raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
             !raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
         {
-            return raw;
+            return ApplyPoolDefault(new NpgsqlConnectionStringBuilder(raw));
         }
 
         var uri = new Uri(raw);
@@ -57,6 +64,15 @@ public static class ConnectionStrings
                     builder[Uri.UnescapeDataString(kv[0])] = Uri.UnescapeDataString(kv[1]);
                 }
             }
+        }
+        return ApplyPoolDefault(builder);
+    }
+
+    private static string ApplyPoolDefault(NpgsqlConnectionStringBuilder builder)
+    {
+        if (!builder.ContainsKey("Maximum Pool Size") && !builder.ContainsKey("Max Pool Size"))
+        {
+            builder.MaxPoolSize = DefaultMaxPoolSize;
         }
         return builder.ConnectionString;
     }
