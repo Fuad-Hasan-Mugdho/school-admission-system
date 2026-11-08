@@ -1,0 +1,101 @@
+# School Admission System - one command brings up PostgreSQL, the .NET backend and the React frontend:
+#     docker compose up --build
+# Frontend:  http://localhost:3000
+# Backend:   http://localhost:8080   (Swagger UI at /swagger)
+#
+# Optional profiles:
+#   docker compose --profile multi up --build            -> second backend instance on :8081 sharing the same DB (bonus)
+#   docker compose --profile test run --rm backend-tests  -> backend automated tests (incl. concurrency)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: admission
+      POSTGRES_USER: admission
+      POSTGRES_PASSWORD: admission
+    volumes:
+      - postgres-data:/var/lib/postgresql/data   # survives `docker compose down` / restarts
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admission -d admission"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      DATABASE_URL: postgres://admission:admission@postgres:5432/admission
+      HOLD_DURATION_SECONDS: ${HOLD_DURATION_SECONDS:-600}
+      HOLD_SWEEP_INTERVAL_SECONDS: ${HOLD_SWEEP_INTERVAL_SECONDS:-1}
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      # URL the *browser* uses to reach the backend, hence localhost rather than the service name.
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ---- bonus: a second backend process on another port, same database ----
+  backend-2:
+    profiles: ["multi"]
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      DATABASE_URL: postgres://admission:admission@postgres:5432/admission
+      HOLD_DURATION_SECONDS: ${HOLD_DURATION_SECONDS:-600}
+      HOLD_SWEEP_INTERVAL_SECONDS: ${HOLD_SWEEP_INTERVAL_SECONDS:-1}
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---- backend automated tests, run against a throw-away database ----
+  postgres-test:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: admission_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d admission_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend-tests:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: test
+    environment:
+      TEST_DATABASE_URL: Host=postgres-test;Port=5432;Database=admission_test;Username=test;Password=test
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
